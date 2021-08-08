@@ -11,9 +11,12 @@ https://docs.djangoproject.com/en/3.2/ref/settings/
 """
 
 from pathlib import Path
+from os import environ, path
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(path.join(BASE_DIR, '.env'))
 
 
 # Quick-start development settings - unsuitable for production
@@ -79,14 +82,12 @@ WSGI_APPLICATION = 'hrapi.wsgi.application'
 
 DATABASES = {
     'default': {
-        #'ENGINE': 'django.db.backends.sqlite3',
-        #'NAME': BASE_DIR / 'db.sqlite3',
         'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'NAME': 'hr',
-        'USER': 'postgres',
-        'PASSWORD': 'password',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': environ['RDS_DB_NAME'],
+        'USER': environ['RDS_USERNAME'],
+        'PASSWORD': environ['RDS_PASSWORD'],
+        'HOST': environ['RDS_HOSTNAME'],
+        'PORT': environ['RDS_PORT'],
     }
 }
 
