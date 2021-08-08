@@ -11,7 +11,11 @@ from django.db import connection
 from .models import Profile
 from .serializers import ProfileSerializer
 
+# ML libraries
 import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import LabelEncoder
 
 
 # Using class based views to use mixins and generics
@@ -77,7 +81,12 @@ class AverageAge(APIView):
     """
     Calculates average age in given industry
     URI path: v1/age/<str:industry>
+    Example: v1/age/Medical Specialities
     """
+
+    # Even though there are missing values, I didn't tackle that.
+    # In case of salary, missing values would be just the average.
+    # This would not change the return value of these 3 functions.
 
     def get(self, request, industry: str):
         """
@@ -85,7 +94,7 @@ class AverageAge(APIView):
 
         Parameters:
         industry (str): industry of interest, one of the listed in the dataframe,
-        e.g. Metal Fabrications
+        e.g. Metal Fabrications, Commercial Banks
         """
         query = str(Profile.objects.all().query)
         df = pd.read_sql(query, connection)
@@ -114,6 +123,7 @@ class AverageSalary(APIView):
     """
     Calculates average salary in given industry
     URI path: v1/salary/industry/<str:industry>
+    Example: /v1/salary/industry/Metal%20Fabrications
     """
 
     def get(self, request, industry: str):
@@ -152,3 +162,85 @@ class AverageSalaryPerExperience(APIView):
         }
 
         return Response(data)
+
+
+class SalaryPredictor(APIView):
+    '''
+    Predicts salary based on gender, industry, experience, age
+
+        URL format v1/salary/prediction/<int:gender>/<int:industry>/<int:experience>/<int:age>
+
+    Params Explanation:
+        gender: 0 - Female, 1 - Male, 2 - None
+        industry: categories from 0 to 128, e.g.
+            89 - Other Specialty Stores,
+            24 - Commercial Banks,
+            125- Water Supply
+        experience: years of experience
+        age: age
+
+    Example:
+        v1/salary/prediction/2/22/4/40
+        gender: 2 - None
+        industry: 22 - Clothing/Shoe/Accessory Stores
+        experience: 4 years
+        age: 40 years old
+    '''
+    def get(self, request, gender, industry, experience, age):
+
+        # small model, can be trained each time is called, to be separated later
+        predicted_salary = self.model_training(gender, industry, experience, age)
+        data = {
+            "gender": gender,
+            "industry": industry,
+            "years_of_experience": experience,
+            "age": age,
+            "predicted_salary": predicted_salary
+        }
+
+        return Response(data)
+
+    def model_training(self, gender, industry, experience, age):
+        # Small model, can be run
+        query = str(Profile.objects.all().query)
+        df = pd.read_sql(query, connection)
+
+        # Data preparation - getting rid off nulls and encoding data
+        # Example of handling missing data - filling nulls with mean.
+        # IRL it would be useful to compare and probably choose other options
+        # and see which one is most precise and accurate
+        df = df.fillna(df.mean())
+
+        # Convert DOB into age
+        def calculate_age(date):
+            today = date.today()
+            age = today.year - date.year - ((today.month, today.day) < (date.month, date.day))
+            return age
+
+        df['date_of_birth'] = df['date_of_birth'].apply(calculate_age)
+
+        # Label encoding
+        labelencoder = LabelEncoder()
+        df['gender'] = labelencoder.fit_transform(df['gender'])
+        df['industry'] = labelencoder.fit_transform(df['industry'])
+
+        # Reshuffling data
+        df = df.reindex(np.random.permutation(df.index))
+        # Slice into training and test data
+        mask = np.random.rand(len(df)) < 0.8
+        train_df = pd.DataFrame(df[mask])
+        # for testing and evaluating accuracy and precision
+        test_df = pd.DataFrame(df[~mask])
+
+        # Slice to get features and labels
+        X = train_df.iloc[:, [4,5,6,8]]
+        y = train_df.iloc[:, 7]
+
+        model = LinearRegression()
+        model.fit(X, y)
+
+        # Export model
+        # pickle.dump(model, open('model.pkl', 'wb'))
+        # model = pickle.load(open('model.pkl', 'rb'))
+
+        return model.predict([[gender, industry, experience, age]])
